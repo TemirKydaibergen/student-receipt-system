@@ -1,0 +1,10 @@
+flask==3.0.0
+flask-cors==4.0.0
+easyocr==1.7.0
+Pillow>=10.2.0
+openpyxl==3.1.2
+pdf2image==1.16.3
+# PyMuPDF - попробуем установить для всех платформ (включая Windows)
+# Если установка не удастся, можно использовать pdf2image (требует poppler на Windows)
+pymupdf>=1.24.0
+
