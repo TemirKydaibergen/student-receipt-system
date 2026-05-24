@@ -141,7 +141,14 @@ if __name__ == '__main__':
     from werkzeug.serving import run_simple
     try:
         # Пробуем обычный способ
-        app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+        port = int(os.environ.get("PORT", 5000))
+
+        app.run(
+            host='0.0.0.0',
+            port=port,
+            debug=False,
+            use_reloader=False
+        )
     except (UnicodeDecodeError, Exception) as e:
         # Если ошибка, используем werkzeug напрямую
         print(f"Note: Using werkzeug directly (dotenv issue bypassed)")
