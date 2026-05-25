@@ -24,11 +24,18 @@ class ReceiptProcessor:
         # Это может занять время при первом запуске (загрузка моделей)
         try:
             print("Initializing EasyOCR...")
-            self.reader = easyocr.Reader(['ru', 'en'], gpu=False)
-            print("EasyOCR initialized successfully")
+            self.reader = None
+            print("EasyOCR will be loaded on first request")
         except Exception as e:
             print(f"Error initializing EasyOCR: {e}")
             raise
+
+    def get_reader(self):
+        if self.reader is None:
+            print("Loading EasyOCR...")
+            self.reader = easyocr.Reader(['ru', 'en'], gpu=False)
+            print("EasyOCR loaded")
+        return self.reader        
 
     def process_receipt(self, filepath, bank_type=None, auto_extract_fullname=False):
         """
@@ -234,6 +241,8 @@ class ReceiptProcessor:
                 print(f"Image loading traceback: {traceback.format_exc()}")
                 raise Exception(f"Cannot read image file: {e}")
             
+            reader = self.get_reader()
+            
             try:
                 # Улучшенные параметры OCR для лучшего распознавания
                 # Для изображений (особенно JPG) используем более мягкие параметры
@@ -249,7 +258,7 @@ class ReceiptProcessor:
                     # Используем numpy array вместо пути к файлу для лучшей совместимости
                     try:
                         print(f"Attempting OCR on numpy array (shape: {img_array.shape})")
-                        results = self.reader.readtext(
+                        results = reader.readtext(
                             img_array,  # Передаем numpy array вместо пути
                             detail=1,  # Полная детализация
                             paragraph=False,  # Не группировать в параграфы
@@ -272,7 +281,7 @@ class ReceiptProcessor:
                     if len(results) == 0:
                         print("Trying OCR with even more relaxed parameters...")
                         try:
-                            results = self.reader.readtext(
+                            results = reader.readtext(
                                 img_array,  # Используем numpy array
                                 detail=1,
                                 paragraph=False,
@@ -291,7 +300,7 @@ class ReceiptProcessor:
                     if len(results) == 0:
                         print("Trying OCR without thresholds...")
                         try:
-                            results = self.reader.readtext(
+                            results = reader.readtext(
                                 img_array,  # Используем numpy array
                                 detail=1,
                                 paragraph=False,
@@ -312,7 +321,7 @@ class ReceiptProcessor:
                         print(f"WARNING: Cannot load PDF image as array, using file path: {e}")
                         pdf_img_array = ocr_filepath
                     
-                    results = self.reader.readtext(
+                    results = reader.readtext(
                         pdf_img_array,  # Используем numpy array или путь
                         detail=1,
                         paragraph=False,
