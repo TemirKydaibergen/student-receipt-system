@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
+	// "path/filepath"
 	"receipt-processor/backend/handlers"
 	"receipt-processor/backend/middleware"
 	"receipt-processor/backend/models"
@@ -24,7 +24,7 @@ func main() {
 	// Инициализация базы данных
 	// Используем modernc.org/sqlite напрямую через database/sql (без CGO)
 	// Затем оборачиваем в GORM
-	sqlDB, err := sql.Open("sqlite", "receipts.db")
+	sqlDB, err := sql.Open("sqlite", "/tmp/receipts.db")
 	if err != nil {
 		log.Fatal("Failed to open database:", err)
 	}
@@ -57,39 +57,39 @@ func main() {
 	r := mux.NewRouter()
 
 	// Определяем путь к frontend относительно текущей рабочей директории
-	wd, _ := os.Getwd()
-	log.Printf("Current working directory: %s", wd)
+	// wd, _ := os.Getwd()
+	// log.Printf("Current working directory: %s", wd)
 
-	// Пробуем разные варианты путей
-	var frontendPath string
-	possiblePaths := []string{
-		"./frontend",
-		"../frontend",
-		filepath.Join(wd, "frontend"),
-		filepath.Join(wd, "..", "frontend"),
-	}
+	// // Пробуем разные варианты путей
+	// var frontendPath string
+	// possiblePaths := []string{
+	// 	"./frontend",
+	// 	"../frontend",
+	// 	filepath.Join(wd, "frontend"),
+	// 	filepath.Join(wd, "..", "frontend"),
+	// }
 
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			frontendPath = absPath
-			log.Printf("Found frontend at: %s", frontendPath)
-			break
-		}
-	}
+	// for _, path := range possiblePaths {
+	// 	if _, err := os.Stat(path); err == nil {
+	// 		absPath, _ := filepath.Abs(path)
+	// 		frontendPath = absPath
+	// 		log.Printf("Found frontend at: %s", frontendPath)
+	// 		break
+	// 	}
+	// }
 
-	if frontendPath == "" {
-		log.Fatal("Frontend directory not found! Please ensure frontend/ directory exists.")
-	}
+	// if frontendPath == "" {
+	// 	log.Fatal("Frontend directory not found! Please ensure frontend/ directory exists.")
+	// }
 
-	// Статические файлы (CSS, JS, изображения)
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(frontendPath))))
+	// // Статические файлы (CSS, JS, изображения)
+	// r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(frontendPath))))
 
-	// Главная страница
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		indexPath := filepath.Join(frontendPath, "index.html")
-		http.ServeFile(w, r, indexPath)
-	})
+	// // Главная страница
+	// r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// 	indexPath := filepath.Join(frontendPath, "index.html")
+	// 	http.ServeFile(w, r, indexPath)
+	// })
 
 	// API маршруты
 	api := r.PathPrefix("/api").Subrouter()

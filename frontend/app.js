@@ -591,7 +591,9 @@ function setupEventListeners() {
 
 // API функции
 async function apiCall(endpoint, options = {}) {
-    const url = `/api${endpoint}`;
+    const API_BASE_URL = 'https://your-backend.onrender.com';
+
+    const url = `${API_BASE_URL}/api${endpoint}`;
     const defaultOptions = {
         headers: {},
     };
