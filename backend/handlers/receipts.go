@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite" // Драйвер SQLite без CGO
 )
@@ -26,7 +24,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := getUserID(r)
 		role := r.Header.Get("X-User-Role")
-		
+
 		log.Printf("GetReceipts called - UserID: %d, Role: %s", userID, role)
 		log.Printf("Request URL: %s", r.URL.String())
 		log.Printf("Query params: %v", r.URL.Query())
@@ -50,7 +48,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 				searchPattern := "%" + search + "%"
 				// SQLite LIKE с COLLATE NOCASE для регистронезависимого поиска
 				// Ищем по полному ФИО, группе и типу банка
-				query = query.Where("full_name LIKE ? COLLATE NOCASE OR \"group\" LIKE ? COLLATE NOCASE OR bank_type LIKE ? COLLATE NOCASE", 
+				query = query.Where("full_name LIKE ? COLLATE NOCASE OR \"group\" LIKE ? COLLATE NOCASE OR bank_type LIKE ? COLLATE NOCASE",
 					searchPattern, searchPattern, searchPattern)
 				log.Printf("Search filter applied: '%s', pattern: '%s'", search, searchPattern)
 			}
@@ -59,34 +57,34 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 		// Детальные фильтры
 		groupParam := r.URL.Query().Get("group")
 		log.Printf("Raw group parameter from URL: '%s'", groupParam)
-		
+
 		if groupParam != "" && groupParam != "all" {
 			// Убираем пробелы и нормализуем значение
 			group := strings.TrimSpace(groupParam)
 			log.Printf("Group filter received: '%s' (length: %d, bytes: %v)", group, len(group), []byte(group))
-			
+
 			// Проверим все уникальные группы в БД для отладки ПЕРЕД применением фильтра
 			var allGroups []string
 			db.Model(&models.Receipt{}).Distinct("\"group\"").Pluck("\"group\"", &allGroups)
 			log.Printf("All groups in DB (before filter): %v", allGroups)
-			
+
 			// Проверяем, есть ли такая группа в БД
 			var testCount int64
 			db.Model(&models.Receipt{}).Where("\"group\" = ? COLLATE NOCASE", group).Count(&testCount)
 			log.Printf("Total receipts in DB with group '%s' (case-insensitive): %d", group, testCount)
-			
+
 			// Также проверим точное совпадение
 			var exactCount int64
 			db.Model(&models.Receipt{}).Where("\"group\" = ?", group).Count(&exactCount)
 			log.Printf("Total receipts in DB with group '%s' (exact match): %d", group, exactCount)
-			
+
 			// Проверяем с учетом user_id фильтра (если не админ)
 			if role != "admin" {
 				var userFilteredCount int64
 				db.Model(&models.Receipt{}).Where("user_id = ? AND \"group\" = ? COLLATE NOCASE", userID, group).Count(&userFilteredCount)
 				log.Printf("Total receipts for user %d with group '%s': %d", userID, group, userFilteredCount)
 			}
-			
+
 			// Используем точное сравнение (SQLite по умолчанию регистронезависим для ASCII)
 			// Но для надежности используем COLLATE NOCASE
 			query = query.Where("\"group\" = ? COLLATE NOCASE", group)
@@ -143,7 +141,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 		if receipts == nil {
 			receipts = []models.Receipt{}
 		}
-		
+
 		// Логируем для отладки
 		if groupFilter := r.URL.Query().Get("group"); groupFilter != "" && groupFilter != "all" {
 			log.Printf("Group filter '%s': found %d receipts after pagination (page %d, limit %d)", groupFilter, len(receipts), page, limit)
@@ -153,7 +151,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 				log.Printf("WARNING: No receipts found with group filter '%s' after pagination!", groupFilter)
 			}
 		}
-		
+
 		// Логируем для отладки поиска
 		if search := r.URL.Query().Get("search"); search != "" {
 			log.Printf("Search '%s' found %d receipts before grouping", search, len(receipts))
@@ -164,14 +162,14 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 
 		// Группируем по ФИО и вычисляем статистику
 		type ReceiptGroup struct {
-			FullName        string           `json:"full_name"`
-			Group           string           `json:"group"`
-			TotalPaid       float64          `json:"total_paid"`
-			RequiredAmount  float64          `json:"required_amount"`
-			PaymentPercent  float64          `json:"payment_percent"`
-			PaymentStatus   string           `json:"payment_status"` // "paid", "partial", "unpaid", "overpaid"
-			Receipts        []models.Receipt `json:"receipts"`
-			TransferredAmount float64         `json:"transferred_amount,omitempty"` // Перенесенная переплата
+			FullName          string           `json:"full_name"`
+			Group             string           `json:"group"`
+			TotalPaid         float64          `json:"total_paid"`
+			RequiredAmount    float64          `json:"required_amount"`
+			PaymentPercent    float64          `json:"payment_percent"`
+			PaymentStatus     string           `json:"payment_status"` // "paid", "partial", "unpaid", "overpaid"
+			Receipts          []models.Receipt `json:"receipts"`
+			TransferredAmount float64          `json:"transferred_amount,omitempty"` // Перенесенная переплата
 		}
 
 		// Получаем все требуемые суммы для всех групп и учебных годов
@@ -205,23 +203,23 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 		// Сначала собираем необработанные квитанции отдельно
 		var unprocessedReceipts []models.Receipt
 		receiptGroups := make(map[string]*ReceiptGroup)
-		
+
 		// Логируем все квитанции перед группировкой для отладки
 		if groupFilter := r.URL.Query().Get("group"); groupFilter != "" && groupFilter != "all" {
 			log.Printf("Before grouping: processing %d receipts with group filter '%s'", len(receipts), groupFilter)
 			for i, receipt := range receipts {
-				log.Printf("Receipt %d: FullName='%s', Group='%s', Status='%s', Amount=%v", 
+				log.Printf("Receipt %d: FullName='%s', Group='%s', Status='%s', Amount=%v",
 					i+1, receipt.FullName, receipt.Group, receipt.Status, receipt.Amount)
 			}
 		}
-		
+
 		for _, receipt := range receipts {
 			// Если квитанция не обработана или с ошибкой, добавляем в отдельный список
 			if receipt.Status != "processed" || receipt.Status == "error" || receipt.Amount == nil || *receipt.Amount == 0 {
 				unprocessedReceipts = append(unprocessedReceipts, receipt)
 				continue
 			}
-			
+
 			// Определяем учебный год для квитанции
 			var academicYearID uint
 			if receipt.AcademicYearID != nil {
@@ -229,17 +227,17 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 			} else if hasActiveYear {
 				academicYearID = activeYear.ID
 			}
-			
+
 			// Получаем требуемую сумму для этой группы и учебного года
 			key := receipt.Group + "|" + fmt.Sprintf("%d", academicYearID)
 			requiredAmount := groupYearAmounts[key]
-			
+
 			// Если не найдено, пробуем найти по группе в активном учебном году
 			if requiredAmount == 0 && hasActiveYear {
 				activeKey := receipt.Group + "|" + fmt.Sprintf("%d", activeYear.ID)
 				requiredAmount = groupYearAmounts[activeKey]
 			}
-			
+
 			// Ключ для группировки: ФИО + группа (группируем все квитанции одного студента в одной группе)
 			// Примечание: если у студента есть квитанции из разных учебных годов, используем максимальную требуемую сумму
 			groupKey := receipt.FullName + "|" + receipt.Group
@@ -273,7 +271,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 			} else {
 				group.PaymentPercent = 0
 			}
-			
+
 			if group.RequiredAmount > 0 {
 				if group.PaymentPercent >= 100 {
 					group.PaymentStatus = "paid"
@@ -286,7 +284,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 				// Если требуемая сумма не установлена, считаем как неоплаченное
 				group.PaymentStatus = "unpaid"
 			}
-			
+
 			groupedReceipts = append(groupedReceipts, *group)
 		}
 
@@ -303,14 +301,14 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 			}
 			unprocessedReceipts = filteredUnprocessed
 		}
-		
+
 		for _, receipt := range unprocessedReceipts {
 			// Определяем статус: error или pending
 			receiptStatus := receipt.Status
 			if receiptStatus == "" {
 				receiptStatus = "pending"
 			}
-			
+
 			groupKey := receipt.FullName + "|" + receipt.Group + "|" + receiptStatus
 			receiptGroups[groupKey] = &ReceiptGroup{
 				FullName:       receipt.FullName,
@@ -322,7 +320,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 				Receipts:       []models.Receipt{receipt},
 			}
 		}
-		
+
 		// Пересобираем groupedReceipts с учетом необработанных и перенесенной переплаты
 		groupedReceipts = []ReceiptGroup{}
 		for _, group := range receiptGroups {
@@ -333,24 +331,24 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 			} else if len(group.Receipts) > 0 && group.Receipts[0].AcademicYearID != nil {
 				targetYearID = *group.Receipts[0].AcademicYearID
 			}
-			
+
 			// Получаем перенесенную переплату для этого студента и учебного года
 			transferKey := group.FullName + "|" + group.Group + "|" + fmt.Sprintf("%d", targetYearID)
 			transferredAmount := overpaymentTransfers[transferKey]
-			
+
 			// Сохраняем оригинальную сумму оплаты
 			originalPaid := group.TotalPaid
-			
+
 			// Учитываем перенесенную переплату при расчете
 			effectivePaid := originalPaid + transferredAmount
-			
+
 			if group.RequiredAmount > 0 {
 				group.PaymentPercent = (effectivePaid / group.RequiredAmount) * 100
 				// Не ограничиваем 100%, чтобы видеть переплату
 			} else {
 				group.PaymentPercent = 0
 			}
-			
+
 			// Не перезаписываем статус "error" или "pending"
 			if group.PaymentStatus != "pending" && group.PaymentStatus != "error" {
 				if group.RequiredAmount > 0 {
@@ -370,15 +368,15 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 					group.PaymentStatus = "unpaid"
 				}
 			}
-			
+
 			// Добавляем информацию о перенесенной переплате в группу
 			group.TransferredAmount = transferredAmount
 			// Обновляем TotalPaid с учетом переноса для отображения
 			group.TotalPaid = effectivePaid
-			
+
 			groupedReceipts = append(groupedReceipts, *group)
 		}
-		
+
 		// Применяем фильтр по группе ПОСЛЕ группировки, если он был указан
 		groupFilter := r.URL.Query().Get("group")
 		if groupFilter != "" && groupFilter != "all" {
@@ -391,7 +389,7 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 				}
 			}
 			groupedReceipts = filteredGroupedReceipts
-			
+
 			log.Printf("After grouping and filtering by group '%s': found %d groups", groupFilter, len(groupedReceipts))
 			if len(groupedReceipts) > 0 {
 				log.Printf("First group: FullName='%s', Group='%s'", groupedReceipts[0].FullName, groupedReceipts[0].Group)
@@ -452,22 +450,22 @@ func GetReceipts(db *gorm.DB) http.HandlerFunc {
 		if groupedReceipts == nil {
 			groupedReceipts = []ReceiptGroup{}
 		}
-		
+
 		// Если после фильтрации групп нет, но total > 0, это означает, что фильтр не нашел совпадений
 		// В этом случае возвращаем пустой массив групп
 		if len(groupedReceipts) == 0 && total > 0 {
 			log.Printf("No groups after filtering, but total > 0. Returning empty groups array. Total: %d", total)
 			groupedReceipts = []ReceiptGroup{}
 		}
-		
+
 		log.Printf("Final response: groupedReceipts count=%d, total=%d, page=%d, limit=%d", len(groupedReceipts), total, page, limit)
-		
+
 		// Убеждаемся, что мы всегда возвращаем массив, а не nil
 		receiptsValue := interface{}(groupedReceipts)
 		if receiptsValue == nil {
 			receiptsValue = []ReceiptGroup{}
 		}
-		
+
 		response := map[string]interface{}{
 			"receipts": receiptsValue,
 			"total":    total,
@@ -535,13 +533,13 @@ func UploadReceipt(db *gorm.DB) http.HandlerFunc {
 			http.Error(w, "FullName is required when auto-extract is disabled", http.StatusBadRequest)
 			return
 		}
-		
+
 		// Если автоматическое извлечение банка включено, bankType не обязателен
 		if !autoExtractBank && bankType == "" {
 			http.Error(w, "Bank type is required when auto-extract is disabled", http.StatusBadRequest)
 			return
 		}
-		
+
 		if group == "" {
 			http.Error(w, "Missing required field: group", http.StatusBadRequest)
 			return
@@ -588,7 +586,7 @@ func UploadReceipt(db *gorm.DB) http.HandlerFunc {
 		receipt := models.Receipt{
 			FullName:       fullName, // Если autoExtractFullName=true, будет обновлено после OCR
 			Group:          group,
-			BankType:       bankType, // Если autoExtractBank=true, будет обновлено после OCR
+			BankType:       bankType,      // Если autoExtractBank=true, будет обновлено после OCR
 			FilePath:       filepathForDB, // Сохраняем нормализованный путь с прямыми слешами
 			Status:         "pending",
 			UserID:         userID,
@@ -603,7 +601,7 @@ func UploadReceipt(db *gorm.DB) http.HandlerFunc {
 		}
 
 		// Отправка файла в Python сервис для обработки
-		go processReceiptWithPython(receipt.ID, filePath, bankType, autoExtractFullName, autoExtractBank)
+		go processReceiptWithPython(db, receipt.ID, filePath, bankType, autoExtractFullName, autoExtractBank)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(receipt)
@@ -636,33 +634,33 @@ func GetReceiptFile(db *gorm.DB) http.HandlerFunc {
 
 		// Нормализуем путь к файлу (исправляем возможные проблемы с разделителями)
 		filePath := receipt.FilePath
-		
+
 		// Заменяем ~ на правильный разделитель пути
 		if strings.Contains(filePath, "~") {
 			filePath = strings.ReplaceAll(filePath, "~", string(filepath.Separator))
 		}
-		
+
 		// Нормализуем путь
 		filePath = filepath.FromSlash(filePath)
 		filePath = filepath.Clean(filePath)
-		
+
 		// Если путь не начинается с "uploads", добавляем его
 		if !filepath.IsAbs(filePath) && !strings.HasPrefix(filePath, "uploads") {
 			filePath = filepath.Join("uploads", filepath.Base(filePath))
 		}
-		
+
 		log.Printf("Attempting to serve file: '%s' (original path: '%s')", filePath, receipt.FilePath)
 
 		// Проверяем существование файла
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			log.Printf("File not found at path: '%s', error: %v", filePath, err)
-			
+
 			// Список альтернативных путей для проверки
 			alternativePaths := []string{
 				filePath, // Текущий путь
 				filepath.Join("uploads", filepath.Base(receipt.FilePath)), // Только имя файла в uploads
 			}
-			
+
 			// Если в оригинальном пути есть ~, пробуем заменить на разделитель
 			originalPath := receipt.FilePath
 			if strings.Contains(originalPath, "~") {
@@ -670,7 +668,7 @@ func GetReceiptFile(db *gorm.DB) http.HandlerFunc {
 				altPath = filepath.Clean(altPath)
 				alternativePaths = append(alternativePaths, altPath)
 			}
-			
+
 			// Пробуем найти файл по части имени (без timestamp)
 			baseName := filepath.Base(receipt.FilePath)
 			if strings.Contains(baseName, "_") {
@@ -685,7 +683,7 @@ func GetReceiptFile(db *gorm.DB) http.HandlerFunc {
 					}
 				}
 			}
-			
+
 			// Пробуем все альтернативные пути
 			found := false
 			for _, altPath := range alternativePaths {
@@ -700,7 +698,7 @@ func GetReceiptFile(db *gorm.DB) http.HandlerFunc {
 					break
 				}
 			}
-			
+
 			if !found {
 				log.Printf("File not found after trying all alternatives. Original path: '%s'", receipt.FilePath)
 				http.Error(w, fmt.Sprintf("File not found. Original path: %s", receipt.FilePath), http.StatusNotFound)
@@ -713,7 +711,14 @@ func GetReceiptFile(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func processReceiptWithPython(receiptID uint, filePath, bankType string, autoExtractFullName, autoExtractBank bool) {
+func processReceiptWithPython(
+    db *gorm.DB,
+    receiptID uint,
+    filePath,
+    bankType string,
+    autoExtractFullName,
+    autoExtractBank bool,
+) {
 	// Вызов Python API для обработки
 	pythonURL := os.Getenv("PYTHON_SERVICE_URL")
 	if pythonURL == "" {
@@ -730,7 +735,7 @@ func processReceiptWithPython(receiptID uint, filePath, bankType string, autoExt
 	// Отправка файла в Python сервис через multipart form
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	
+
 	// Используем только имя файла для multipart, не полный путь
 	fileNameOnly := filepath.Base(filePath)
 	part, err := writer.CreateFormFile("file", fileNameOnly)
@@ -777,23 +782,8 @@ func processReceiptWithPython(receiptID uint, filePath, bankType string, autoExt
 		return
 	}
 
-	// Обновление записи в БД
-	// Используем modernc.org/sqlite напрямую через database/sql (без CGO)
-	sqlDB, err := sql.Open("sqlite", "receipts.db")
-	if err != nil {
-		log.Printf("Failed to open database: %v", err)
-		return
-	}
-	defer sqlDB.Close()
 	
-	// Оборачиваем в GORM используя Dialector с существующим соединением
-	db, err := gorm.Open(sqlite.Dialector{Conn: sqlDB}, &gorm.Config{})
-	if err != nil {
-		log.Printf("Failed to connect to DB: %v", err)
-		return
-	}
-
-	log.Printf("Received from Python service: amount=%.2f, date=%s, bank_type=%s, full_name=%s", 
+	log.Printf("Received from Python service: amount=%.2f, date=%s, bank_type=%s, full_name=%s",
 		result.Amount, result.PaymentDate, result.BankType, result.FullName)
 
 	paymentDate, err := time.Parse("2006-01-02", result.PaymentDate)
@@ -807,19 +797,19 @@ func processReceiptWithPython(receiptID uint, filePath, bankType string, autoExt
 	// Сумма (amount) - это критически важное поле, без него квитанция не может считаться обработанной
 	// Если amount = 0, это всегда ошибка, независимо от других условий
 	hasValidAmount := amount > 0
-	
+
 	// Проверяем, распознано ли ФИО (если включено автоматическое извлечение)
 	hasValidFullName := true // По умолчанию true, если autoExtractFullName = false (пользователь ввел вручную)
 	if autoExtractFullName {
 		hasValidFullName = result.FullName != ""
 	}
-	
+
 	updates := map[string]interface{}{
 		"amount":          amount,
 		"payment_date":    paymentDate,
 		"university_name": result.UniversityName,
 	}
-	
+
 	// Определяем статус: если сумма не распознана (amount = 0), это всегда ошибка
 	// Также ошибка, если включено автоматическое извлечение ФИО, но оно не распознано
 	if !hasValidAmount {
@@ -832,12 +822,12 @@ func processReceiptWithPython(receiptID uint, filePath, bankType string, autoExt
 		updates["status"] = "processed"
 		log.Printf("Receipt %d successfully processed: amount=%.2f, full_name='%s'", receiptID, amount, result.FullName)
 	}
-	
+
 	// Обновляем ФИО только если автоматическое извлечение включено
 	if autoExtractFullName && result.FullName != "" {
 		updates["full_name"] = result.FullName
 	}
-	
+
 	// Обновляем тип банка только если автоматическое извлечение включено
 	if autoExtractBank && result.BankType != "" {
 		updates["bank_type"] = result.BankType
@@ -902,4 +892,3 @@ func getUserID(r *http.Request) uint {
 	userID, _ := strconv.ParseUint(userIDStr, 10, 32)
 	return uint(userID)
 }
-

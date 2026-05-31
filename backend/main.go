@@ -40,6 +40,14 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
+	// Настройки SQLite для Render
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+
+	db.Exec("PRAGMA journal_mode=WAL;")
+	db.Exec("PRAGMA busy_timeout = 5000;")
+	db.Exec("PRAGMA synchronous = NORMAL;")
+
 	// Автомиграция
 	db.AutoMigrate(&models.User{}, &models.Receipt{}, &models.Group{}, &models.Bank{}, &models.AcademicYear{}, &models.GroupAcademicYear{}, &models.PaymentApplication{}, &models.OverpaymentTransfer{})
 
